@@ -1,5 +1,6 @@
 require 'fileutils'
 require 'pathname'
+require 'shellwords'
 
 class DmgInstallerPlugin < Plugin
   requires_version '1.1.4'
@@ -43,23 +44,24 @@ class DmgInstaller
 
   def mount path
     @mount_point = Pathname.new "/Volumes/#{rand(36**8).to_s(36)}"
-    result = `hdiutil attach -mountpoint #{@mount_point}  #{path}`
+    escaped_path = Shellwords.escape(path)
+    result = `hdiutil attach -mountpoint #{@mount_point} #{escaped_path}`
   end
 
   def copy_apps
     files = @mount_point.entries.collect { |file| @mount_point+file }
-    files.reject! { |file| ((file.to_s.end_with?(".app")) ? false : true) }
+    files.reject! { |file| file.to_s.end_with?(".app") == false }
 
     files.each { |app| 
       @log << "... found #{app}."
-      `cp -a #{app} /Applications/` 
+      FileUtils.cp_r app, "/Applications/"
       @log << "... copied #{app}."
     }
   end
 
   def cleanup path
     result = `hdiutil detach #{@mount_point}`
-    rm path
+    `osascript -e 'tell application "Finder" to delete POSIX file "#{path}"'`
     @log << "... finished installing #{path}. Dmg has been deleted."
   end
 end
@@ -69,6 +71,6 @@ command "Install selected dmg" do
 end
 
 command "Install downloaded dmg" do
-  files = Finder.find("#{Dir.home}/Downloads", :extension => '.dmg')
+  files = Find.find("#{Dir.home}/Downloads", :extension => '.dmg', :type => 'f')
   trigger_item_with(files, DmgInstaller.new)
 end
